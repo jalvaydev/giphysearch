@@ -1,9 +1,15 @@
 import API_KEY from "../../util/api";
 import { GiphyResponse, giphyResponseSchema } from "./APIResponses";
 
-const fetchSearchGifs = async (query: string): Promise<GiphyResponse> => {
+const fetchSearchGifs = async ({
+  query,
+  pageParam,
+}: {
+  query: string;
+  pageParam: number;
+}): Promise<GiphyResponse> => {
   const response = await fetch(
-    `https://api.giphy.com/v1/gifs/search?api_key=${API_KEY}&q=${query}&limit=20`,
+    `https://api.giphy.com/v1/gifs/search?api_key=${API_KEY}&q=${query}&limit=20&offset=${pageParam}`,
   );
 
   const json = await response.json();

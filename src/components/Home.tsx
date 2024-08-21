@@ -1,25 +1,75 @@
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import Results from "./Results";
 import fetchTrendingGifs from "../services/giphy/fetchTrendingGifs";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDebounce } from "use-debounce";
 import fetchSearchGifs from "../services/giphy/fetchSearchGifs";
 
 const Home = () => {
+  const loaderRef = useRef(null);
+
   const [query, setQuery] = useState("");
 
-  const [value] = useDebounce(query, 1000);
+  const [debouncedQuery] = useDebounce(query, 1000);
 
-  const { data: searchGifs, isLoading: searchIsLoading } = useQuery({
-    queryKey: ["search", value],
-    queryFn: () => fetchSearchGifs(value),
-    enabled: 0 < value.length,
+  const {
+    data: searchGifs,
+    isLoading: searchIsLoading,
+    fetchNextPage: searchFetchNextPage,
+    hasNextPage: searchHasNextPage,
+    isFetchingNextPage: searchIsFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ["search", debouncedQuery],
+    queryFn: ({ pageParam }) =>
+      fetchSearchGifs({ query: debouncedQuery, pageParam }),
+    enabled: 0 < debouncedQuery.length,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.pagination.offset >= lastPage.pagination.total_count) {
+        return undefined;
+      }
+
+      return lastPage.pagination.offset + 20;
+    },
   });
 
-  const { data: trendingGifs, isLoading: trendingIsLoading } = useQuery({
+  const {
+    data: trendingGifs,
+    isLoading: trendingIsLoading,
+    fetchNextPage: trendingFetchNextPage,
+    hasNextPage: trendingHasNextPage,
+    isFetchingNextPage: trendingIsFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["trending"],
     queryFn: fetchTrendingGifs,
-    enabled: !value,
+    enabled: !debouncedQuery.length,
+    initialPageParam: 0,
+    getNextPageParam: (lastPage) => {
+      if (lastPage.pagination.offset >= lastPage.pagination.total_count) {
+        return undefined;
+      }
+
+      return lastPage.pagination.offset + 20;
+    },
+  });
+
+  useEffect(() => {
+    const observer = new IntersectionObserver((entries) => {
+      const target = entries[0];
+      if (target.isIntersecting) {
+        debouncedQuery ? searchFetchNextPage() : trendingFetchNextPage();
+      }
+    });
+
+    if (loaderRef.current) {
+      observer.observe(loaderRef.current);
+    }
+
+    return () => {
+      if (loaderRef.current) {
+        observer.unobserve(loaderRef.current);
+      }
+    };
   });
 
   return (
@@ -50,9 +100,17 @@ const Home = () => {
       <div className="mt-2">
         {searchIsLoading || trendingIsLoading ? <div>loading</div> : null}
 
-        <Results
-          gifs={value ? searchGifs?.data ?? [] : trendingGifs?.data ?? []}
-        />
+        <Results data={debouncedQuery ? searchGifs : trendingGifs} />
+
+        {(debouncedQuery && searchHasNextPage) || trendingHasNextPage ? (
+          <div ref={loaderRef}>
+            {(searchIsFetchingNextPage || trendingIsFetchingNextPage) && (
+              <div>Loading...</div>
+            )}
+          </div>
+        ) : (
+          <div>you have reached the end!</div>
+        )}
       </div>
     </div>
   );
